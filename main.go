@@ -104,7 +104,9 @@ func main() {
 	// Ping mongoDB with Ping method
 	ping(client, ctx)
 
-	app.Get("/:code", CodeHandler)
+	app.Get("/:code", func(c *fiber.Ctx) error {
+		return CodeHandler(c, ctx, client)
+	})
 	app.Post("/api/shorten", func(c *fiber.Ctx) error {
 		return ShortenUrlHandler(c, ctx, client)
 	})
@@ -112,12 +114,24 @@ func main() {
 	log.Fatal(app.Listen(":5000"))
 }
 
-func CodeHandler(c *fiber.Ctx) error {
+func CodeHandler(c *fiber.Ctx, ctx context.Context, client *mongo.Client) error {
 	codeParam := c.Params("code")
 
-	fmt.Println(codeParam)
+	coll := client.Database("test").Collection("urls")
+	filter := bson.D{{Key: "URLCode", Value: codeParam}}
 
-	return c.Status(200).JSON(codeParam)
+	var result URL
+	err := coll.FindOne(context.TODO(), filter).Decode(&result)
+
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return c.Status(500).JSON("URL not found")
+		} else {
+			return c.Status(500).JSON("Something went wrong...")
+		}
+	}
+
+	return c.Redirect(result.LongURL)
 }
 
 func ShortenUrlHandler(c *fiber.Ctx, ctx context.Context, client *mongo.Client) error {
